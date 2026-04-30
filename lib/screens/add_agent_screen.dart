@@ -1,4 +1,4 @@
-/// 添加Agent界面
+/// 添加Agent界面 — 支持多平台
 library;
 
 import 'package:flutter/material.dart';
@@ -6,6 +6,22 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
 import 'package:dio/dio.dart';
 import '../models/agent_model.dart';
+
+/// 支持的平台列表
+const PLATFORMS = {
+  'openclaw': PlatformInfo('OpenClaw', 'OpenClaw Agent (CLI)', Icons.smart_toy),
+  'dify': PlatformInfo('Dify', 'Dify Cloud/Self-hosted', Icons.cloud),
+  'ollama': PlatformInfo('Ollama', 'Local LLM (localhost:11434)', Icons.computer),
+  'openai-compatible': PlatformInfo('OpenAI Compatible', 'vLLM, LM Studio, LocalAI...', Icons.api),
+  'fastgpt': PlatformInfo('FastGPT', 'FastGPT Platform', Icons.bolt),
+};
+
+class PlatformInfo {
+  final String name;
+  final String description;
+  final IconData icon;
+  const PlatformInfo(this.name, this.description, this.icon);
+}
 
 class AddAgentScreen extends StatefulWidget {
   const AddAgentScreen({super.key});
@@ -18,7 +34,8 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _urlController = TextEditingController();
-  final _tokenController = TextEditingController();
+  final _apiKeyController = TextEditingController();
+  final _modelController = TextEditingController();
   
   String _platform = 'openclaw';
   bool _isScanning = false;
@@ -29,7 +46,8 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
   void dispose() {
     _nameController.dispose();
     _urlController.dispose();
-    _tokenController.dispose();
+    _apiKeyController.dispose();
+    _modelController.dispose();
     super.dispose();
   }
 
@@ -42,7 +60,6 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () => setState(() => _isScanning = !_isScanning),
-            tooltip: 'Scan QR Code',
           ),
         ],
       ),
@@ -70,6 +87,12 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
               if (uri.queryParameters['platform'] != null) {
                 _platform = uri.queryParameters['platform']!;
               }
+              if (uri.queryParameters['apiKey'] != null) {
+                _apiKeyController.text = uri.queryParameters['apiKey']!;
+              }
+              if (uri.queryParameters['model'] != null) {
+                _modelController.text = uri.queryParameters['model']!;
+              }
               setState(() => _isScanning = false);
             } else if (data.startsWith('http')) {
               _urlController.text = data;
@@ -87,6 +110,33 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Platform selector
+          Text('Platform', style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: PLATFORMS.entries.map((e) => ChoiceChip(
+              avatar: Icon(e.value.icon, size: 16),
+              label: Text(e.value.name),
+              selected: _platform == e.key,
+              onSelected: (_) => setState(() {
+                _platform = e.key;
+                _applyDefaults();
+              }),
+            )).toList(),
+          ),
+          
+          if (PLATFORMS[_platform] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(PLATFORMS[_platform]!.description, 
+                style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+            ),
+          
+          const SizedBox(height: 20),
+          
+          // Agent Name
           TextFormField(
             controller: _nameController,
             decoration: const InputDecoration(
@@ -99,13 +149,20 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
           ),
           const SizedBox(height: 16),
 
+          // Server URL / Agent URL
           TextFormField(
             controller: _urlController,
-            decoration: const InputDecoration(
-              labelText: 'Agent URL',
-              hintText: 'https://your-server.com',
-              prefixIcon: Icon(Icons.link),
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: _platform == 'openclaw' ? 'AgentHub Server URL' : 'API Base URL',
+              hintText: _platform == 'openclaw' 
+                ? 'https://your-server.com' 
+                : _platform == 'dify'
+                  ? 'https://api.dify.ai/v1'
+                  : _platform == 'ollama'
+                    ? 'http://localhost:11434/v1'
+                    : 'https://api.example.com/v1',
+              prefixIcon: const Icon(Icons.link),
+              border: const OutlineInputBorder(),
             ),
             validator: (v) {
               if (v?.trim().isEmpty == true) return 'Required';
@@ -118,35 +175,34 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
           ),
           const SizedBox(height: 16),
 
-          DropdownButtonFormField<String>(
-            value: _platform,
-            decoration: const InputDecoration(
-              labelText: 'Platform',
-              prefixIcon: Icon(Icons.category_outlined),
-              border: OutlineInputBorder(),
+          // API Key (for Dify and OpenAI-compatible)
+          if (_platform != 'openclaw')
+            TextFormField(
+              controller: _apiKeyController,
+              decoration: InputDecoration(
+                labelText: 'API Key',
+                hintText: _platform == 'dify' ? 'app-xxxxxxxx' : 'sk-xxxxxxxx',
+                prefixIcon: const Icon(Icons.key),
+                border: const OutlineInputBorder(),
+              ),
+              obscureText: true,
             ),
-            items: const [
-              DropdownMenuItem(value: 'openclaw', child: Text('OpenClaw')),
-              DropdownMenuItem(value: 'dify', child: Text('Dify')),
-              DropdownMenuItem(value: 'other', child: Text('Other')),
-            ],
-            onChanged: (v) => setState(() => _platform = v ?? 'openclaw'),
-          ),
-          const SizedBox(height: 16),
+          if (_platform != 'openclaw') const SizedBox(height: 16),
 
-          TextFormField(
-            controller: _tokenController,
-            decoration: const InputDecoration(
-              labelText: 'Auth Token (optional)',
-              hintText: 'Leave empty for auto pairing',
-              prefixIcon: Icon(Icons.key),
-              border: OutlineInputBorder(),
+          // Model name (for non-OpenClaw)
+          if (_platform != 'openclaw')
+            TextFormField(
+              controller: _modelController,
+              decoration: InputDecoration(
+                labelText: 'Model Name',
+                hintText: _platform == 'ollama' ? 'llama3' : _platform == 'dify' ? 'dify-app' : 'gpt-4',
+                prefixIcon: const Icon(Icons.psychology),
+                border: const OutlineInputBorder(),
+              ),
             ),
-            obscureText: true,
-          ),
-          const SizedBox(height: 24),
+          if (_platform != 'openclaw') const SizedBox(height: 24),
 
-          // Status message
+          // Status
           if (_statusMessage.isNotEmpty)
             Container(
               padding: const EdgeInsets.all(12),
@@ -164,31 +220,36 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
             onPressed: _isConnecting ? null : _connect,
             icon: _isConnecting
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.add_link),
+                : Icon(PLATFORMS[_platform]?.icon ?? Icons.add_link),
             label: Text(_isConnecting ? 'Connecting...' : 'Connect Agent'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          Text(
-            'Tip: Enter the AgentHub Server URL. The app will auto-pair and get a token.',
-            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-            textAlign: TextAlign.center,
+            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
           ),
         ],
       ),
     );
   }
 
+  void _applyDefaults() {
+    if (_platform == 'ollama') {
+      _urlController.text = 'http://localhost:11434/v1';
+      _modelController.text = 'llama3';
+      _nameController.text = _nameController.text.isEmpty ? 'Local Ollama' : _nameController.text;
+    } else if (_platform == 'lmstudio') {
+      _urlController.text = 'http://localhost:1234/v1';
+    } else if (_platform == 'dify') {
+      _urlController.text = 'https://api.dify.ai/v1';
+      _modelController.text = 'dify-app';
+      _nameController.text = _nameController.text.isEmpty ? 'My Dify App' : _nameController.text;
+    } else if (_platform == 'openclaw') {
+      _apiKeyController.clear();
+      _modelController.clear();
+    }
+  }
+
   Future<void> _connect() async {
     if (!_formKey.currentState!.validate()) return;
     
-    setState(() { 
-      _isConnecting = true; 
-      _statusMessage = '🔄 Checking server...';
-    });
+    setState(() { _isConnecting = true; _statusMessage = '🔄 Connecting...'; });
     
     final baseUrl = _urlController.text.trim().replaceAll(RegExp(r'/+$'), '');
     final dio = Dio(BaseOptions(
@@ -197,95 +258,85 @@ class _AddAgentScreenState extends State<AddAgentScreen> {
     ));
     
     try {
-      // Step 1: Check server status
-      final statusResp = await dio.get('/status');
-      if (statusResp.statusCode != 200) {
-        throw Exception('Server returned ${statusResp.statusCode}');
-      }
-      final status = statusResp.data;
-      setState(() { _statusMessage = '✅ Server online (${status['model'] ?? 'unknown'}, ${status['activeSessions'] ?? 0} sessions)'; });
+      if (_platform == 'openclaw') {
+        // OpenClaw: connect through AgentHub Server
+        final statusResp = await dio.get('/status');
+        final status = statusResp.data;
+        setState(() { _statusMessage = '✅ Server online (${status['model'] ?? '?'})'; });
 
-      // Step 2: If user provided a token, verify it works
-      final userToken = _tokenController.text.trim();
-      if (userToken.isNotEmpty) {
-        // Verify token by fetching sessions
-        try {
-          await Dio(BaseOptions(
-            baseUrl: '$baseUrl/hub',
-            headers: {'Authorization': 'Bearer $userToken'},
-          )).get('/sessions');
-          setState(() { _statusMessage = '✅ Token verified!'; });
-        } catch (e) {
-          setState(() { _statusMessage = '❌ Token invalid, auto-pairing...'; });
-          // Fall through to auto-pair
-        }
+        // Auto-pair
+        setState(() { _statusMessage = '🔄 Pairing...'; });
+        final pairResp = await dio.post('/pair', data: {
+          'device_public_key': 'app-${const Uuid().v4()}',
+          'device_name': _nameController.text.trim(),
+          'device_type': 'android',
+          'challenge': const Uuid().v4().toString(),
+        });
         
-        if (_statusMessage.startsWith('✅ Token verified')) {
-          // Token works, create agent
-          final agent = AgentInstance(
-            id: const Uuid().v4(),
-            name: _nameController.text.trim(),
-            baseUrl: baseUrl,
-            authToken: userToken,
-            platform: _platform,
-            connected: true,
-            model: status['model'],
-          );
-          if (mounted) Navigator.pop(context, agent);
-          return;
-        }
-      }
+        if (pairResp.data['success'] != true) throw Exception('Pairing failed');
+        final token = pairResp.data['token'] as String;
+        
+        // Also register this agent on the server side
+        // (The server already has a default OpenClaw agent)
+        
+        setState(() { _statusMessage = '✅ Paired & connected!'; });
+        await Future.delayed(const Duration(milliseconds: 500));
 
-      // Step 3: Auto-pair with server
-      setState(() { _statusMessage = '🔄 Pairing device...'; });
-      
-      final pairResp = await dio.post('/pair', data: {
-        'device_public_key': 'app-${const Uuid().v4()}',
-        'device_name': _nameController.text.trim(),
-        'device_type': 'android',
-        'challenge': const Uuid().v4().toString(),
-      });
-      
-      final pairData = pairResp.data;
-      if (pairData['success'] != true) {
-        throw Exception('Pairing failed: ${pairData['error'] ?? 'unknown'}');
-      }
-      
-      final token = pairData['token'] as String;
-      setState(() { _statusMessage = '✅ Paired! Token: ${token.substring(0, 8)}...'; });
+        final agent = AgentInstance(
+          id: const Uuid().v4(),
+          name: _nameController.text.trim(),
+          baseUrl: baseUrl,
+          authToken: token,
+          platform: _platform,
+          connected: true,
+          model: status['model'],
+        );
+        if (mounted) Navigator.pop(context, agent);
+        
+      } else {
+        // Non-OpenClaw: register on AgentHub Server
+        setState(() { _statusMessage = '🔄 Registering agent...'; });
+        
+        // First pair with the server
+        final pairResp = await dio.post('/pair', data: {
+          'device_public_key': 'app-${const Uuid().v4()}',
+          'device_name': _nameController.text.trim(),
+          'device_type': 'android',
+          'challenge': const Uuid().v4().toString(),
+        });
+        if (pairResp.data['success'] != true) throw Exception('Pairing failed');
+        final token = pairResp.data['token'] as String;
+        
+        // Register the agent
+        final registerResp = await Dio(BaseOptions(
+          baseUrl: '$baseUrl/hub',
+          headers: {'Authorization': 'Bearer $token'},
+        )).post('/agents', data: {
+          'platform': _platform,
+          'name': _nameController.text.trim(),
+          'baseUrl': _platform == 'dify' ? _urlController.text.trim() : _urlController.text.trim(),
+          'apiKey': _apiKeyController.text.trim().isNotEmpty ? _apiKeyController.text.trim() : null,
+          'model': _modelController.text.trim().isNotEmpty ? _modelController.text.trim() : null,
+        });
+        
+        final agentData = registerResp.data;
+        setState(() { _statusMessage = '✅ Agent registered! Platform: ${agentData['platform']}'; });
+        await Future.delayed(const Duration(milliseconds: 500));
 
-      // Step 4: Verify we can fetch sessions
-      setState(() { _statusMessage = '🔄 Loading sessions...'; });
-      
-      final sessionsResp = await Dio(BaseOptions(
-        baseUrl: '$baseUrl/hub',
-        headers: {'Authorization': 'Bearer $token'},
-      )).get('/sessions');
-      
-      final sessionCount = (sessionsResp.data as List).length;
-      setState(() { _statusMessage = '✅ Connected! $sessionCount sessions found.'; });
-
-      // Create the agent instance with the real token
-      final agent = AgentInstance(
-        id: const Uuid().v4(),
-        name: _nameController.text.trim(),
-        baseUrl: baseUrl,
-        authToken: token,
-        platform: _platform,
-        connected: true,
-        model: status['model'],
-      );
-      
-      // Small delay to show success message
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      if (mounted) {
-        Navigator.pop(context, agent);
+        final agent = AgentInstance(
+          id: const Uuid().v4(),
+          name: _nameController.text.trim(),
+          baseUrl: baseUrl,
+          authToken: token,
+          platform: _platform,
+          connected: agentData['online'] ?? false,
+          model: _modelController.text.trim().isNotEmpty ? _modelController.text.trim() : agentData['model'],
+        );
+        if (mounted) Navigator.pop(context, agent);
       }
-      
     } catch (e) {
       setState(() { 
-        _statusMessage = '❌ ${e.toString().replaceAll('Exception: ', '').substring(0, (e.toString().length > 100) ? 100 : e.toString().length)}';
+        _statusMessage = '❌ ${e.toString().replaceAll('Exception: ', '')}';
         _isConnecting = false;
       });
     }
