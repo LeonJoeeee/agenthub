@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  flutter:
+    name: Flutter analyze + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Test (unit only — integration test self-skips without plugin)
+        run: flutter test
+
+  plugin:
+    name: Plugin Python lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install plugin deps
+        run: pip install aiohttp qrcode pyyaml
+      - name: Compile-check plugin
+        run: python -m compileall -q plugin/agenthub
+      - name: Import-check (without Hermes)
+        run: |
+          python - <<'EOF'
+          import sys
+          sys.path.insert(0, "plugin")
+          # Stub out hermes_constants so the plugin can be imported in CI
+          # without the full Hermes repo present.
+          import types
+          fake = types.ModuleType("hermes_constants")
+          fake.get_hermes_home = lambda: "/tmp/fake-hermes"
+          sys.modules["hermes_constants"] = fake
+          import agenthub.auth, agenthub.server, agenthub  # noqa: F401
+          print("plugin imports OK")
+          EOF
