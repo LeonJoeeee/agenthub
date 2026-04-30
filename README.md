@@ -1,5 +1,8 @@
 # AgentHub — Mobile Client for Self-Hosted Agents
 
+[![CI](https://github.com/LeonJoeeee/agenthub/actions/workflows/ci.yml/badge.svg)](https://github.com/LeonJoeeee/agenthub/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > "Plex for AI agents." Run an agent on your home/server box, scan a QR
 > with your phone, chat with it from anywhere.
 
@@ -47,11 +50,14 @@ agenthub/
 ## Plugin install (one-time, on the agent host)
 
 ```bash
-# clone the repo somewhere (or use hermes plugins install)
 git clone https://github.com/LeonJoeeee/agenthub
-ln -s $(pwd)/agenthub/plugin/agenthub ~/.hermes/plugins/agenthub
-hermes plugins enable agenthub
+cd agenthub
+bash plugin/install.sh
 ```
+
+`install.sh` symlinks the plugin into `~/.hermes/plugins/` and runs
+`hermes plugins enable agenthub`. Re-run after `git pull` is safe.
+Pass `uninstall` to remove.
 
 The plugin starts inside any long-running Hermes process (`hermes gateway run`,
 `hermes acp`, `hermes chat`). On first start it generates a token, persists
