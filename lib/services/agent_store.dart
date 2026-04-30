@@ -1,4 +1,4 @@
-/// Agent本地存储管理（简化版，使用SharedPreferences + JSON）
+/// Local persistence for the user's bound agents.
 library;
 
 import 'dart:convert';
@@ -7,48 +7,60 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/agent_model.dart';
 
 class AgentStore extends ChangeNotifier {
-  List<AgentInstance> _agents = [];
-  List<AgentInstance> get agents => _agents;
+  final List<AgentInstance> _agents = [];
+  List<AgentInstance> get agents => List.unmodifiable(_agents);
 
-  static const _key = 'agenthub_agents';
+  static const _key = 'agenthub_agents_v2';
 
-  /// 从本地存储加载
-  Future<void> loadAgents() async {
+  Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final data = prefs.getString(_key);
-    if (data != null) {
-      final list = jsonDecode(data) as List;
-      _agents = list.map((e) => AgentInstance.fromJson(e as Map<String, dynamic>)).toList();
-      notifyListeners();
+    final raw = prefs.getString(_key);
+    _agents.clear();
+    if (raw != null) {
+      try {
+        final list = jsonDecode(raw) as List;
+        for (final e in list) {
+          _agents.add(AgentInstance.fromJson(e as Map<String, dynamic>));
+        }
+      } catch (_) {
+        // corrupt — drop and start fresh
+      }
     }
+    notifyListeners();
   }
 
-  /// 保存到本地
-  Future<void> _save() async {
+  Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    final data = jsonEncode(_agents.map((a) => a.toJson()).toList());
-    await prefs.setString(_key, data);
+    await prefs.setString(
+      _key,
+      jsonEncode(_agents.map((a) => a.toJson()).toList()),
+    );
   }
 
-  /// 添加新agent
-  Future<void> addAgent(AgentInstance agent) async {
+  Future<void> add(AgentInstance agent) async {
     _agents.add(agent);
-    await _save();
+    await _persist();
     notifyListeners();
   }
 
-  /// 更新agent
-  Future<void> updateAgent(AgentInstance agent) async {
-    final idx = _agents.indexWhere((a) => a.id == agent.id);
-    if (idx >= 0) _agents[idx] = agent;
-    await _save();
+  Future<void> remove(String id) async {
+    _agents.removeWhere((a) => a.id == id);
+    await _persist();
     notifyListeners();
   }
 
-  /// 删除agent
-  Future<void> removeAgent(String agentId) async {
-    _agents.removeWhere((a) => a.id == agentId);
-    await _save();
+  Future<void> update(AgentInstance agent) async {
+    final i = _agents.indexWhere((a) => a.id == agent.id);
+    if (i < 0) return;
+    _agents[i] = agent;
+    await _persist();
     notifyListeners();
+  }
+
+  AgentInstance? byId(String id) {
+    for (final a in _agents) {
+      if (a.id == id) return a;
+    }
+    return null;
   }
 }

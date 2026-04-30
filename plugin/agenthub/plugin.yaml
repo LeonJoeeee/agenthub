@@ -1,0 +1,5 @@
+name: agenthub
+version: 0.4.0
+description: "AgentHub mobile gateway — exposes a token-authed HTTP/WS API so the AgentHub Flutter App can list sessions, view history, and chat with Hermes from a phone."
+author: "LeonJoeeee"
+hooks: []

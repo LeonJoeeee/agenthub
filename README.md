@@ -1,126 +1,129 @@
-# AgentHub — 通用Agent移动客户端
+# AgentHub — Mobile Client for Self-Hosted Agents
 
-> Agent版Termius — 一个App聚合管理所有AI Agent实例
+> "Plex for AI agents." Run an agent on your home/server box, scan a QR
+> with your phone, chat with it from anywhere.
 
-## 🏗️ 架构
+**Status:** v0.4 — pure Flutter client + Hermes plugin. Single-platform
+(Hermes only), single-machine, single-user. Earlier 9-adapter Node bridge
+has been deleted.
+
+## Architecture
 
 ```
-┌─────────────────┐         ┌──────────────────┐         ┌─────────────┐
-│  AgentHub App   │◄──WS──►│ AgentHub Server  │◄──CLI──►│  OpenClaw   │
-│  (Flutter)      │  REST  │  (Node.js)       │         │  Agent      │
-│  iOS + Android  │        │  Port 18790      │         │  Port 18789 │
-└─────────────────┘         └──────────────────┘         └─────────────┘
++------------------+      direct HTTP/WS over LAN       +------------------+
+|  Flutter App     | <-------------------------------> |  Hermes process   |
+|  (Android/iOS)   |    Bearer-token auth, /v1/* API   |  + agenthub plugin |
+|                  |                                    |  (port 18790)     |
++------------------+                                    +------------------+
 ```
 
-**App不直接碰LLM API。** App只跟AgentHub Server通信，Server通过OpenClaw CLI与Agent交互。
+* **No middle server.** The App talks directly to the agent process.
+* **No cloud account.** Token + host/port are stored on the phone in
+  `shared_preferences`.
+* **Pull model.** App fetches latest sessions/messages on open. v0.4 has
+  no realtime push — that comes in v0.5 via FCM/APNs.
+* **Plugin-installed gateway.** The agent side gets one tiny Python
+  plugin (`plugin/agenthub/`). No core Hermes patches.
 
-## ✅ 已实现功能
+## Repository layout
 
-### Flutter App (agenthub/)
-- 多Agent管理（添加/删除/状态显示）
-- QR码扫码配对
-- Session列表浏览
-- 流式聊天界面（Markdown渲染）
-- 工具调用审批按钮
-- 连接状态指示（在线/离线/思考中）
-- 深色主题
+```
+agenthub/
+├── lib/                    Flutter client
+│   ├── clients/            HermesClient (HTTP)
+│   ├── models/             AgentInstance, ChatMessage, ChatSession
+│   ├── protocol/           AgentEndpoint + pair-URI parser
+│   ├── screens/            home, add_agent, session, chat
+│   └── services/           AgentStore (shared_preferences)
+├── plugin/agenthub/        Hermes plugin (Python)
+│   ├── plugin.yaml         Plugin manifest
+│   ├── __init__.py         register() + daemon-thread bootstrap
+│   ├── server.py           aiohttp routes
+│   └── auth.py             token + QR helpers
+├── android/, ios/          Flutter platform shells
+└── pubspec.yaml
+```
 
-### AgentHub Server (agenthub-server/)
-- `/hub/status` — Agent健康检查
-- `/hub/pair` — 设备配对（Ed25519公钥 + HMAC Token）
-- `/hub/sessions` — Session列表
-- `/hub/chat` — 非流式聊天（REST）
-- `/hub/ws` — WebSocket流式聊天
-- `/hub/devices` — 已配对设备管理
-- 设备持久化存储
-- 自动重连 + 心跳
-
-### 端到端测试通过 ✅
-- REST: 发送消息 → OpenClaw回复 "嘿！👋"
-- WS: 发送消息 → 36.6s后收到正确流式回复
-- 配对: 设备配对 → Token生成 → 认证访问
-
-## 📱 安装
-
-### 1. 启动AgentHub Server
+## Plugin install (one-time, on the agent host)
 
 ```bash
-cd agenthub-server
-npm install
-node src/index.js
-# Server runs on http://0.0.0.0:18790
+# clone the repo somewhere (or use hermes plugins install)
+git clone https://github.com/LeonJoeeee/agenthub
+ln -s $(pwd)/agenthub/plugin/agenthub ~/.hermes/plugins/agenthub
+hermes plugins enable agenthub
 ```
 
-环境变量：
-- `AGENTHUB_PORT` — 服务端口（默认18790）
-- `OPENCLAW_BIN` — openclaw CLI路径（默认`openclaw`）
-- `AGENTHUB_PAIR_SECRET` — 配对密钥（自动生成）
+The plugin starts inside any long-running Hermes process (`hermes gateway run`,
+`hermes acp`, `hermes chat`). On first start it generates a token, persists
+it to `~/.hermes/agenthub.json`, and prints a QR code to stderr like:
 
-### 2. 安装App
+```
++--------------------------------------------------------------+
+|  AgentHub mobile pairing                                     |
++--------------------------------------------------------------+
+█▀▀▀▀▀█ ... QR ...
+  URL:   agenthub://pair?host=192.168.x.x&port=18790&token=...
+  HTTP:  http://192.168.x.x:18790
+```
 
-将 `app-release.apk` 安装到Android设备：
+**Environment knobs**:
+* `AGENTHUB_PORT` — port to bind (default 18790)
+* `AGENTHUB_HOST` — bind interface (default 0.0.0.0)
+* `AGENTHUB_DISPLAY_HOST` — host shown in QR (default = LAN IP auto-detect)
+* `AGENTHUB_FORCE_START=1` — start the server even from short-lived commands
+
+## Mobile App
+
 ```bash
-adb install app-release.apk
+cd agenthub
+flutter pub get
+flutter run                # connected device or emulator
+flutter build apk --release
 ```
 
-### 3. 在App中添加Agent
+Open the App, tap "Scan to add", point camera at the QR — done.
 
-- 打开App → 点击 +
-- 输入AgentHub Server地址（如 `http://你的服务器IP:18790`）
-- 选择平台：OpenClaw
-- 点击 Connect
+## Plugin API
 
-## 🔐 安全架构
+All endpoints require `Authorization: Bearer <token>` except `/health`.
 
-- 传输：TLS 1.3（生产环境需配置反向代理）
-- 认证：Ed25519设备公钥 + HMAC Token
-- 权限分级：6级（默认聊天+Session管理）
-- 设备绑定：Agent端可随时撤销设备权限
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | liveness, public |
+| GET | `/v1/sessions?limit=N` | list recent sessions |
+| GET | `/v1/sessions/{id}` | session metadata |
+| GET | `/v1/sessions/{id}/messages?limit=N` | message history |
+| POST | `/v1/chat` | send a message; body `{content, session_id?}` |
+| GET | `/v1/capabilities` | model + provider info |
 
-## 📂 项目结构
+`POST /v1/chat` currently spawns `hermes -z`, so each call starts a fresh
+turn — full session resumption is a v0.5 task (will switch to in-process
+delivery via Hermes's api_server gateway).
 
-```
-agenthub/                   # Flutter App
-├── lib/
-│   ├── main.dart           # 入口
-│   ├── protocol/           # AgentHub通信协议定义
-│   ├── models/             # 数据模型（Agent, Chat, Session）
-│   ├── services/           # 连接管理 + 本地存储
-│   └── screens/            # UI界面（Home, Chat, AddAgent, Session）
-├── android/                # Android构建配置
-└── pubspec.yaml            # 依赖
+## Roadmap
 
-agenthub-server/            # Node.js桥接服务器
-├── src/
-│   └── index.js            # 服务主文件（Express + WS）
-├── data/                   # 设备持久化存储
-└── package.json
-```
+| Version | Item | Status |
+|---------|------|--------|
+| v0.4 | Flutter pure-client + plugin scaffold | ✓ |
+| v0.4 | Sessions list, message history, basic send | ✓ |
+| v0.4 | QR pairing | ✓ |
+| v0.5 | True session resumption (api_server delegation) | — |
+| v0.5 | FCM/APNs push so agents can ping the phone | — |
+| v0.5 | Settings UI (model switch, skill toggle) | — |
+| v0.5 | Tool-approval round-trip via WS | — |
+| v0.6 | iOS release + App Store | — |
+| v0.6 | Multi-platform: Claude Code, Aider, Codex CLI | — |
 
-## 🔮 后续规划
+## Why this shape
 
-- [ ] 真正的流式输出（逐token推送而非等完整回复）
-- [ ] E2E加密
-- [ ] 推送通知（FCM/APNs）
-- [ ] Dify平台插件
-- [ ] 文件传输
-- [ ] 工具调用可视化
-- [ ] iOS版本发布
-- [ ] 多用户权限管理
+Earlier attempts wrapped each agent platform behind a Node.js bridge
+server (9 adapters: openclaw / dify / claude / openai / coze / flowise /
+maxkb / n8n). That layer translated N protocols into a custom one — pure
+maintenance tax with no independent value. The current design **borrows
+the agent's existing API surface** (Hermes already exposes everything
+needed via its plugin lifecycle + state.db), so the App's job shrinks to
+"render that surface nicely on a phone".
 
-## 📊 测试结果
+## License
 
-| 测试项 | 结果 | 耗时 |
-|--------|------|------|
-| Server启动 | ✅ | <1s |
-| REST Status | ✅ | <1s |
-| 设备配对 | ✅ | <1s |
-| Session列表 | ✅ | <2s |
-| REST Chat | ✅ | ~30s |
-| WS Chat (流式) | ✅ | ~36s |
-| Flutter Analyze | ✅ 0 error | 1.5s |
-| APK Build (release) | ✅ 73MB | ~4min |
-
----
-
-*AgentHub v0.1.0 — 2026-04-29*
+TBD.

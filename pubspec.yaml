@@ -1,7 +1,7 @@
 name: agenthub
-description: "Universal Agent Mobile Client — manage all your AI agents in one app"
+description: "Mobile client for self-hosted agents — talks directly to the agent's own gateway plugin."
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.4.0+1
 
 environment:
   sdk: ^3.7.2
@@ -9,42 +9,29 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # State management
   flutter_riverpod: ^2.6.1
-  riverpod_annotation: ^2.6.1
-  
-  # HTTP & WebSocket
+
+  # HTTP
   dio: ^5.7.0
-  web_socket_channel: ^3.0.2
-  
+
   # Local storage
-  
-  
   shared_preferences: ^2.3.4
-  
-  # Crypto
-  ed25519_edwards: ^0.3.1
-  crypto: ^3.0.6
-  
+
   # UI
   flutter_markdown: ^0.7.7
-  flutter_highlight: ^0.7.0
   cupertino_icons: ^1.0.8
-  
+
   # Utils
   uuid: ^4.5.1
   intl: ^0.20.2
-  url_launcher: ^6.3.1
-  qr_flutter: ^4.1.0
   mobile_scanner: ^6.0.5
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
-  build_runner: ^2.4.14
-  riverpod_generator: ^2.6.3
 
 flutter:
   uses-material-design: true

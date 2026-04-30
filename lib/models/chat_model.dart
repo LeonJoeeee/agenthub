@@ -1,105 +1,101 @@
-/// 聊天消息模型
+/// Chat message + session models — match the shapes returned by the
+/// agenthub plugin's /v1 endpoints.
 library;
 
-/// 单条消息
 class ChatMessage {
-  String id;
-  String sessionId;
-  String agentId;
-  String role; // 'user' | 'assistant' | 'system' | 'tool'
-  String content;
-  DateTime timestamp;
-  bool streaming; // 是否正在流式输出
-  String? toolName;
-  String? toolInput;
-  String? toolOutput;
-  bool needsApproval;
-  bool? approved;
+  final int id;
+  final String role; // user | assistant | tool | system
+  final String? content;
+  final String? toolName;
+  final dynamic toolCalls;
+  final DateTime timestamp;
+  final String? finishReason;
 
   ChatMessage({
     required this.id,
-    required this.sessionId,
-    required this.agentId,
     required this.role,
     required this.content,
-    DateTime? timestamp,
-    this.streaming = false,
+    required this.timestamp,
     this.toolName,
-    this.toolInput,
-    this.toolOutput,
-    this.needsApproval = false,
-    this.approved,
-  }) : timestamp = timestamp ?? DateTime.now();
+    this.toolCalls,
+    this.finishReason,
+  });
 
-  ChatMessage copyWith({
-    String? content,
-    bool? streaming,
-    String? toolOutput,
-    bool? approved,
-  }) {
-    return ChatMessage(
-      id: id,
-      sessionId: sessionId,
-      agentId: agentId,
-      role: role,
-      content: content ?? this.content,
-      timestamp: timestamp,
-      streaming: streaming ?? this.streaming,
-      toolName: toolName,
-      toolInput: toolInput,
-      toolOutput: toolOutput ?? this.toolOutput,
-      needsApproval: needsApproval,
-      approved: approved ?? this.approved,
-    );
-  }
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+        id: json['id'] as int,
+        role: json['role'] as String,
+        content: json['content'] as String?,
+        toolName: json['tool_name'] as String?,
+        toolCalls: json['tool_calls'],
+        timestamp: DateTime.fromMillisecondsSinceEpoch(
+          ((json['timestamp'] as num) * 1000).toInt(),
+        ),
+        finishReason: json['finish_reason'] as String?,
+      );
+
+  /// Lightweight client-only constructor for messages composed in the App
+  /// before they're persisted to the server.
+  factory ChatMessage.local({
+    required String role,
+    required String content,
+  }) =>
+      ChatMessage(
+        id: -DateTime.now().microsecondsSinceEpoch,
+        role: role,
+        content: content,
+        timestamp: DateTime.now(),
+      );
 }
 
-/// Session（对话）
 class ChatSession {
-  String id;
-  String agentId;
-  String? key; // Agent端的session key
-  String? label;
-  String? model;
-  DateTime createdAt;
-  DateTime updatedAt;
-  int messageCount;
-  String? lastMessage;
-  int unreadCount;
+  final String id;
+  final String? source;
+  final String? model;
+  final String? title;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final int messageCount;
+  final int toolCallCount;
+  final int inputTokens;
+  final int outputTokens;
+  final double? costUsd;
 
   ChatSession({
     required this.id,
-    required this.agentId,
-    this.key,
-    this.label,
+    required this.startedAt,
+    this.source,
     this.model,
-    DateTime? createdAt,
-    DateTime? updatedAt,
+    this.title,
+    this.endedAt,
     this.messageCount = 0,
-    this.lastMessage,
-    this.unreadCount = 0,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+    this.toolCallCount = 0,
+    this.inputTokens = 0,
+    this.outputTokens = 0,
+    this.costUsd,
+  });
 
-  ChatSession copyWith({
-    String? label,
-    String? model,
-    DateTime? updatedAt,
-    int? messageCount,
-    String? lastMessage,
-    int? unreadCount,
-  }) {
-    return ChatSession(
-      id: id,
-      agentId: agentId,
-      key: key,
-      label: label ?? this.label,
-      model: model ?? this.model,
-      createdAt: createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      messageCount: messageCount ?? this.messageCount,
-      lastMessage: lastMessage ?? this.lastMessage,
-      unreadCount: unreadCount ?? this.unreadCount,
-    );
+  factory ChatSession.fromJson(Map<String, dynamic> json) => ChatSession(
+        id: json['id'] as String,
+        source: json['source'] as String?,
+        model: json['model'] as String?,
+        title: json['title'] as String?,
+        startedAt: DateTime.fromMillisecondsSinceEpoch(
+          ((json['started_at'] as num) * 1000).toInt(),
+        ),
+        endedAt: json['ended_at'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(
+                ((json['ended_at'] as num) * 1000).toInt(),
+              )
+            : null,
+        messageCount: (json['message_count'] as int?) ?? 0,
+        toolCallCount: (json['tool_call_count'] as int?) ?? 0,
+        inputTokens: (json['input_tokens'] as int?) ?? 0,
+        outputTokens: (json['output_tokens'] as int?) ?? 0,
+        costUsd: (json['cost_usd'] as num?)?.toDouble(),
+      );
+
+  String get displayTitle {
+    if (title != null && title!.trim().isNotEmpty) return title!;
+    return id;
   }
 }
